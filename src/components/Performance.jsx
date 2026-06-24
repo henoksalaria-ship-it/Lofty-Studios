@@ -1,0 +1,7 @@
+import { PageHeading } from './Ui.jsx'
+
+const rows = [['Public challenge — Hey Mobile', 'TikTok', '1.8M', '12.4%', 'ETB 450K'], ['One day as a barista', 'Instagram', '834K', '9.1%', 'ETB 280K'], ['Kegna in 30 seconds', 'TikTok', '642K', '8.7%', 'ETB 500K'], ['Lofty Talk: No filter', 'YouTube', '388K', '7.3%', '—']]
+
+export default function Performance() {
+  return <><PageHeading title="Performance analyzer" description="See exactly what is landing — and what is making clients money." action="Import CSV"/><div className="analyzer-summary"><section><span>Top format</span><strong>Public challenge</strong><small>+38% reach vs average</small></section><section><span>Best posting window</span><strong>7:30–8:30 PM</strong><small>Across TikTok & Reels</small></section><section><span>Average engagement</span><strong>9.4%</strong><small>+1.8% this month</small></section><section><span>Campaign value</span><strong>ETB 1.23M</strong><small>Tracked revenue</small></section></div><section className="panel performance-table"><div className="section-label"><h2>Best content · June</h2><button className="filter-button">All platforms <span>⌄</span></button></div><div className="table-wrap"><table><thead><tr><th>Content</th><th>Platform</th><th>Views</th><th>Engagement</th><th>Revenue attached</th></tr></thead><tbody>{rows.map(row => <tr key={row[0]}>{row.map((cell, index) => <td key={cell}>{index === 0 ? <strong>{cell}</strong> : cell}</td>)}</tr>)}</tbody></table></div></section></>
+}

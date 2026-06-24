@@ -1,0 +1,15 @@
+import { useState } from 'react'
+import Icon from './Icon.jsx'
+import { PageHeading } from './Ui.jsx'
+import { ideaSeed } from '../data.js'
+
+const days = [{ label: 'Mon', date: '22' }, { label: 'Tue', date: '23' }, { label: 'Wed', date: '24' }, { label: 'Thu', date: '25' }, { label: 'Fri', date: '26' }, { label: 'Sat', date: '27' }, { label: 'Sun', date: '28' }]
+const slots = ['9:00', '12:00', '3:00', '6:00']
+
+export default function CalendarPlanner() {
+  const [ideas, setIdeas] = useState(ideaSeed)
+  const [scheduled, setScheduled] = useState({ 'Wed-9:00': { title: 'Hey Mobile — Shoot day 1', tone: 'purple' }, 'Thu-12:00': { title: 'Internal team sync', tone: 'muted' }, 'Fri-3:00': { title: 'Ethio Telecom — concept review', tone: 'purple' } })
+  const [dragId, setDragId] = useState(null)
+  const handleDrop = (slot) => { const idea = ideas.find(item => item.id === dragId); if (!idea) return; setScheduled(current => ({ ...current, [slot]: { title: idea.title, tone: idea.tone } })); setIdeas(current => current.filter(item => item.id !== dragId)); setDragId(null) }
+  return <><PageHeading title="Content calendar" description="Plan the work, then put the right idea on the right day." action="New event"/><div className="calendar-layout"><section className="planner"><div className="calendar-topline"><div><button className="month-switch">‹</button><strong>June 2026</strong><button className="month-switch">›</button></div><span>Week view</span></div><div className="planner-grid"><div className="time-spacer"/>{days.map(day => <div className={`planner-day ${day.date === '24' ? 'is-today' : ''}`} key={day.date}><span>{day.label}</span><strong>{day.date}</strong></div>)}{slots.map(time => <><div className="planner-time" key={`${time}-time`}>{time}</div>{days.map(day => { const key = `${day.label}-${time}`; const event = scheduled[key]; return <div key={key} className={`drop-zone ${event ? 'has-plan' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={() => handleDrop(key)}>{event && <button className={`plan-event ${event.tone}`} onClick={() => setScheduled(current => { const next = { ...current }; delete next[key]; return next })}><span>{event.title}</span><small>Click to remove</small></button>}</div> })}</> )}</div></section><aside className="ideas-panel"><div className="ideas-heading"><div><span className="eyebrow">Drag & drop planning</span><h2>Ideas in motion</h2></div><button className="icon-button"><Icon name="plus" size={18}/></button></div><p>Drag an approved idea onto a date to turn it into a scheduled content event.</p><div className="idea-columns">{['Raw ideas', 'Scripts needed', 'Ready to shoot', 'Finalized'].map(column => <div className="idea-column" key={column}><h3>{column}<span>{ideas.filter(idea => idea.column === column).length}</span></h3>{ideas.filter(idea => idea.column === column).map(idea => <article className={`idea-card ${idea.tone}`} key={idea.id} draggable onDragStart={() => setDragId(idea.id)}><span className="drag-grip">⠿</span><strong>{idea.title}</strong><small>{idea.client}</small></article>)}</div>)}</div></aside></div></>
+}
