@@ -1,11 +1,11 @@
 import LoginForm from './login-form'
 
 const loginCopy = {
-  auth_redirect_failed: 'Supabase rejected that sign-in link. Send yourself a fresh link and open the newest email.',
-  missing_auth_token: 'That sign-in link was incomplete. Send a fresh link from this page.',
-  unsupported_auth_type: 'That sign-in link used an unsupported verification type. Send a fresh link.',
+  auth_redirect_failed: 'Supabase rejected that old sign-in link. Sign in with your email and password instead.',
+  missing_auth_token: 'That old sign-in link was incomplete. Sign in with your email and password instead.',
+  unsupported_auth_type: 'That old sign-in link used an unsupported verification type. Sign in with your email and password instead.',
   auth_code_failed: 'That link could not be verified. It may have expired, already been used, or opened in a different browser.',
-  auth_token_failed: 'That secure token could not be verified. Send a fresh link and try again.',
+  auth_token_failed: 'That secure token could not be verified. Sign in with your email and password instead.',
 }
 
 function safeNext(value) {

@@ -1,6 +1,5 @@
 'use server'
 
-import { timingSafeEqual } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -14,16 +13,6 @@ const outreachChannels = new Set(['call', 'email', 'dm', 'whatsapp', 'meeting', 
 
 function clean(value, maximum = 5000) {
   return String(value ?? '').trim().slice(0, maximum)
-}
-
-function toSlug(value) {
-  return clean(value, 90).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-}
-
-function matchesSecret(input, secret) {
-  const inputBuffer = Buffer.from(String(input || ''))
-  const secretBuffer = Buffer.from(String(secret || ''))
-  return inputBuffer.length === secretBuffer.length && timingSafeEqual(inputBuffer, secretBuffer)
 }
 
 function toPositiveAmount(value) {
@@ -58,46 +47,6 @@ async function findAuthUserByEmail(admin, email) {
     if (!data?.users || data.users.length < 1000) return null
   }
   return null
-}
-
-export async function createWorkspace(formData) {
-  const { user } = await getUserClient()
-  const masterPassword = process.env.LOFTY_MASTER_LOGIN_PASSWORD
-  const setupPassword = clean(formData.get('setup_password'), 300)
-  if (!masterPassword) throw new Error('Workspace activation is not configured yet.')
-  if (!matchesSecret(setupPassword, masterPassword)) throw new Error('Setup password is incorrect.')
-
-  const admin = createAdminClient()
-  const { count: ownerCount, error: ownerCountError } = await admin
-    .from('workspace_members')
-    .select('workspace_id', { count: 'exact', head: true })
-    .eq('role', 'owner')
-  if (ownerCountError) throw new Error(ownerCountError.message)
-  if (ownerCount) throw new Error('This Lofty workspace has already been activated.')
-
-  const name = clean(formData.get('name'), 120)
-  if (!name) throw new Error('Workspace name is required.')
-  const baseSlug = toSlug(name) || 'lofty-studios'
-  const slug = `${baseSlug}-${user.id.slice(0, 6)}`
-
-  const { error: profileError } = await admin.from('profiles').upsert({
-    id: user.id,
-    display_name: clean(formData.get('display_name'), 120) || user.email?.split('@')[0] || 'Lofty member',
-  })
-  if (profileError) throw new Error(profileError.message)
-
-  const { data: workspace, error: workspaceError } = await admin
-    .from('workspaces')
-    .insert({ name, slug, created_by: user.id })
-    .select('id')
-    .single()
-  if (workspaceError) throw new Error(workspaceError.message)
-
-  const { error: membershipError } = await admin
-    .from('workspace_members')
-    .insert({ workspace_id: workspace.id, user_id: user.id, role: 'owner' })
-  if (membershipError) throw new Error(membershipError.message)
-  redirect('/dashboard')
 }
 
 export async function signOut() {

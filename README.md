@@ -1,10 +1,10 @@
 # Lofty Studios Command Center
 
-The production foundation for Lofty Studios’ operating system: pipeline, tasks, finance, content planning, performance tracking, and secure website-to-pipeline lead intake.
+The production foundation for Lofty Studios' operating system: pipeline, tasks, finance, content planning, performance tracking, role management, and secure website-to-pipeline lead intake.
 
 ## What is built
 
-- Passwordless Supabase authentication protected by a server-only master access password, workspace activation, and protected app routes.
+- Supabase email/password authentication with a first-owner setup flow and protected app routes.
 - Row-level access controls for owner, admin, sales, editor, finance, and viewer roles.
 - Live dashboard driven by deals, tasks, finance records, and calendar events.
 - Drag-and-drop pipeline stages that persist immediately.
@@ -21,7 +21,6 @@ The production foundation for Lofty Studios’ operating system: pipeline, tasks
 
 1. Create a Supabase project.
 2. Copy `.env.example` to `.env.local` and fill in the project values. Never commit `.env.local`.
-   Set `LOFTY_MASTER_LOGIN_PASSWORD` to a long private password. It is checked on the server before sign-in links are sent and again when the first owner activates the workspace.
 3. Authenticate and link the CLI to that project:
 
    ```powershell
@@ -30,26 +29,19 @@ The production foundation for Lofty Studios’ operating system: pipeline, tasks
    npx supabase db push
    ```
 
-4. In Supabase Dashboard → API settings, make sure the `public` schema is exposed to the Data API. The migration grants only `authenticated` database access and enables RLS on every exposed application table.
-5. Enable Email authentication in Supabase Dashboard → Authentication → Providers, then add your production URL, `http://localhost:3000/auth/callback`, and `http://localhost:3000/auth/confirm` to the redirect URL allow-list.
-6. For the most reliable email sign-in, customize the Supabase email template link to use token hash confirmation:
-
-   ```html
-   <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/dashboard">Sign in to Lofty Studios</a>
-   ```
-
-   Keep `{{ .ConfirmationURL }}` available if you prefer the default PKCE link flow; the app supports both `/auth/callback` and `/auth/confirm`.
-7. Run the app:
+4. In Supabase Dashboard > API settings, make sure the `public` schema is exposed to the Data API. The migrations grant only `authenticated` database access and enable RLS on every exposed application table.
+5. Enable Email authentication and password sign-in in Supabase Dashboard > Authentication > Providers. The app does not depend on magic links for login.
+6. Run the app:
 
    ```powershell
    npm run dev
    ```
 
-The first signed-in person who also has the setup password activates the Lofty workspace and becomes its owner. After activation, workspace creation is closed and future users must be added through owner-controlled membership.
+The first user opens the login page, chooses First setup, creates their password, and becomes the workspace owner. After activation, owner creation is closed and future users must be added through owner-controlled membership.
 
 ## Website lead intake
 
-The public website must call this endpoint from its server-side form handler—not from browser JavaScript—so `LOFTY_LEAD_INGEST_SECRET` never reaches visitors.
+The public website must call this endpoint from its server-side form handler, not from browser JavaScript, so `LOFTY_LEAD_INGEST_SECRET` never reaches visitors.
 
 `POST /api/leads`
 
@@ -77,6 +69,6 @@ Optional fields include `email`, `phone`, `website`, `social_handle`, `industry`
 - Configure an email sender domain in Supabase Auth before inviting the team.
 - Enable Supabase Auth leaked password protection in the dashboard.
 - Set the production app URL and auth redirect URLs.
-- Deploy to Vercel (or another Node-compatible host) with the same environment variables, including `SUPABASE_SERVICE_ROLE_KEY` and `LOFTY_MASTER_LOGIN_PASSWORD`.
-- Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. It is used exclusively by the website lead intake route.
+- Deploy to Vercel or another Node-compatible host with the same environment variables, including `SUPABASE_SERVICE_ROLE_KEY`.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. It is used exclusively by server routes.
 - Store files under `lofty-files/<workspace-id>/...`; the migration creates a private bucket with workspace-aware policies.
