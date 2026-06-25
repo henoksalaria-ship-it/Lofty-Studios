@@ -27,8 +27,15 @@ The production foundation for Lofty Studios’ operating system: pipeline, tasks
    ```
 
 4. In Supabase Dashboard → API settings, make sure the `public` schema is exposed to the Data API. The migration grants only `authenticated` database access and enables RLS on every exposed application table.
-5. Enable Email authentication in Supabase Dashboard → Authentication → Providers, then add your production URL and `http://localhost:3000/auth/callback` to the redirect URL allow-list.
-6. Run the app:
+5. Enable Email authentication in Supabase Dashboard → Authentication → Providers, then add your production URL, `http://localhost:3000/auth/callback`, and `http://localhost:3000/auth/confirm` to the redirect URL allow-list.
+6. For the most reliable email sign-in, customize the Supabase email template link to use token hash confirmation:
+
+   ```html
+   <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/dashboard">Sign in to Lofty Studios</a>
+   ```
+
+   Keep `{{ .ConfirmationURL }}` available if you prefer the default PKCE link flow; the app supports both `/auth/callback` and `/auth/confirm`.
+7. Run the app:
 
    ```powershell
    npm run dev

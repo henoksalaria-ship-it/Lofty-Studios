@@ -17,6 +17,12 @@ a { color: inherit; text-decoration: none; }
 .auth-card label { display: grid; gap: 7px; color: #c7c7c0; font-size: 12px; }
 .auth-card input { width: 100%; border: 1px solid #454540; border-radius: 3px; background: #11110f; color: #efefea; padding: 11px; outline: none; font-size: 14px; }
 .auth-card .primary-button { justify-content: center; margin-top: 3px; }
+.login-stack { display: grid; gap: 14px; }
+.login-stack form { display: grid; gap: 15px; }
+.otp-form { border-top: 1px solid var(--line); padding-top: 14px; }
+.otp-form button { height: 38px; border: 1px solid var(--line); border-radius: 3px; background: #181815; color: var(--text); font-size: 12px; }
+.otp-form button:not(:disabled) { cursor: pointer; border-color: #5d5d55; }
+.otp-form button:disabled { color: var(--muted); opacity: .7; }
 .form-message { min-height: 18px; color: var(--lime); font-size: 12px; line-height: 1.45; }
 .form-message.is-error { color: var(--coral); }
 .empty-board { min-height: 310px; display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 24px; }
