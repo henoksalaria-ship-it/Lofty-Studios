@@ -2,5 +2,8 @@ node_modules/
 .next/
 .env.local
 .env*.local
+.vercel/
 .npm-cache/
 *.log
+.vercel
+.env*
