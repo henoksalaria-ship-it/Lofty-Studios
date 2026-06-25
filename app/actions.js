@@ -1,10 +1,16 @@
 'use server'
 
+import { timingSafeEqual } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const stages = new Set(['cold_leads', 'reached_out', 'open_deals', 'ongoing_deals', 'waiting_payment', 'closed_won', 'lost_not_now'])
+const financeGoalTypes = new Set(['cash_flow', 'revenue', 'collections', 'expense_control', 'savings', 'pipeline'])
+const financeGoalStatuses = new Set(['active', 'paused', 'complete', 'archived'])
+const assignableRoles = new Set(['admin', 'sales', 'editor', 'finance', 'viewer'])
+const outreachChannels = new Set(['call', 'email', 'dm', 'whatsapp', 'meeting', 'proposal'])
 
 function clean(value, maximum = 5000) {
   return String(value ?? '').trim().slice(0, maximum)
@@ -14,6 +20,17 @@ function toSlug(value) {
   return clean(value, 90).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 }
 
+function matchesSecret(input, secret) {
+  const inputBuffer = Buffer.from(String(input || ''))
+  const secretBuffer = Buffer.from(String(secret || ''))
+  return inputBuffer.length === secretBuffer.length && timingSafeEqual(inputBuffer, secretBuffer)
+}
+
+function toPositiveAmount(value) {
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount : 0
+}
+
 async function getUserClient() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -21,27 +38,62 @@ async function getUserClient() {
   return { supabase, user }
 }
 
+async function assertWorkspaceOwner(supabase, userId, workspaceId) {
+  const { data: membership, error } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (membership?.role !== 'owner') throw new Error('Only the workspace owner can manage roles.')
+}
+
+async function findAuthUserByEmail(admin, email) {
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error) throw new Error(error.message)
+    const user = data?.users?.find((candidate) => candidate.email?.toLowerCase() === email)
+    if (user) return user
+    if (!data?.users || data.users.length < 1000) return null
+  }
+  return null
+}
+
 export async function createWorkspace(formData) {
-  const { supabase, user } = await getUserClient()
+  const { user } = await getUserClient()
+  const masterPassword = process.env.LOFTY_MASTER_LOGIN_PASSWORD
+  const setupPassword = clean(formData.get('setup_password'), 300)
+  if (!masterPassword) throw new Error('Workspace activation is not configured yet.')
+  if (!matchesSecret(setupPassword, masterPassword)) throw new Error('Setup password is incorrect.')
+
+  const admin = createAdminClient()
+  const { count: ownerCount, error: ownerCountError } = await admin
+    .from('workspace_members')
+    .select('workspace_id', { count: 'exact', head: true })
+    .eq('role', 'owner')
+  if (ownerCountError) throw new Error(ownerCountError.message)
+  if (ownerCount) throw new Error('This Lofty workspace has already been activated.')
+
   const name = clean(formData.get('name'), 120)
   if (!name) throw new Error('Workspace name is required.')
   const baseSlug = toSlug(name) || 'lofty-studios'
   const slug = `${baseSlug}-${user.id.slice(0, 6)}`
 
-  const { error: profileError } = await supabase.from('profiles').upsert({
+  const { error: profileError } = await admin.from('profiles').upsert({
     id: user.id,
     display_name: clean(formData.get('display_name'), 120) || user.email?.split('@')[0] || 'Lofty member',
   })
   if (profileError) throw new Error(profileError.message)
 
-  const { data: workspace, error: workspaceError } = await supabase
+  const { data: workspace, error: workspaceError } = await admin
     .from('workspaces')
     .insert({ name, slug, created_by: user.id })
     .select('id')
     .single()
   if (workspaceError) throw new Error(workspaceError.message)
 
-  const { error: membershipError } = await supabase
+  const { error: membershipError } = await admin
     .from('workspace_members')
     .insert({ workspace_id: workspace.id, user_id: user.id, role: 'owner' })
   if (membershipError) throw new Error(membershipError.message)
@@ -134,20 +186,82 @@ export async function updateDealStage(formData) {
   revalidatePath('/pipeline')
 }
 
+export async function createOutreachLog(formData) {
+  const { supabase, user } = await getUserClient()
+  const workspaceId = clean(formData.get('workspace_id'), 80)
+  const dealId = clean(formData.get('deal_id'), 80)
+  const channel = clean(formData.get('channel'), 40) || 'email'
+  const nextFollowUpAt = clean(formData.get('next_follow_up_at'), 40)
+  if (!workspaceId || !dealId || !outreachChannels.has(channel)) throw new Error('Choose a deal and outreach channel.')
+
+  const { error } = await supabase.from('outreach_logs').insert({
+    workspace_id: workspaceId,
+    deal_id: dealId,
+    created_by: user.id,
+    channel,
+    message: clean(formData.get('message')) || null,
+    outcome: clean(formData.get('outcome'), 500) || null,
+    next_follow_up_at: nextFollowUpAt ? new Date(nextFollowUpAt).toISOString() : null,
+  })
+  if (error) throw new Error(error.message)
+
+  if (nextFollowUpAt) {
+    const { data: deal } = await supabase
+      .from('deals')
+      .select('deal_title,companies(company_name)')
+      .eq('workspace_id', workspaceId)
+      .eq('id', dealId)
+      .maybeSingle()
+    const label = deal?.companies?.company_name || deal?.deal_title || 'deal'
+    const { error: taskError } = await supabase.from('tasks').insert({
+      workspace_id: workspaceId,
+      deal_id: dealId,
+      title: `Follow up with ${label}`,
+      due_date: new Date(nextFollowUpAt).toISOString(),
+      priority: 'high',
+      assigned_to: user.id,
+      created_by: user.id,
+    })
+    if (taskError) throw new Error(taskError.message)
+  }
+
+  revalidatePath('/outreach')
+  revalidatePath('/pipeline')
+  revalidatePath('/dashboard')
+}
+
 export async function createCalendarEvent(formData) {
   const { supabase, user } = await getUserClient()
   const workspaceId = clean(formData.get('workspace_id'), 80)
   const title = clean(formData.get('title'), 180)
   const startDate = clean(formData.get('start_date'), 40)
+  const dealId = clean(formData.get('deal_id'), 80)
   if (!workspaceId || !title || !startDate) throw new Error('Title and start date are required.')
   const { error } = await supabase.from('calendar_events').insert({
     workspace_id: workspaceId,
+    deal_id: dealId || null,
     title,
     event_type: clean(formData.get('event_type'), 50) || 'content_post',
     start_date: new Date(startDate).toISOString(),
     status: 'planned',
     assigned_to: user.id,
   })
+  if (error) throw new Error(error.message)
+  revalidatePath('/calendar')
+  revalidatePath('/dashboard')
+}
+
+export async function updateCalendarEventStatus(formData) {
+  const { supabase } = await getUserClient()
+  const workspaceId = clean(formData.get('workspace_id'), 80)
+  const eventId = clean(formData.get('event_id'), 80)
+  const status = clean(formData.get('status'), 40)
+  if (!workspaceId || !eventId || !['planned', 'in_progress', 'complete', 'cancelled'].includes(status)) throw new Error('Choose a valid calendar event status.')
+  const { error } = await supabase
+    .from('calendar_events')
+    .update({ status })
+    .eq('workspace_id', workspaceId)
+    .eq('id', eventId)
   if (error) throw new Error(error.message)
   revalidatePath('/calendar')
   revalidatePath('/dashboard')
@@ -213,4 +327,137 @@ export async function createFinanceRecord(formData) {
   if (error) throw new Error(error.message)
   revalidatePath('/finance')
   revalidatePath('/dashboard')
+}
+
+export async function createFinanceGoal(formData) {
+  const { supabase, user } = await getUserClient()
+  const workspaceId = clean(formData.get('workspace_id'), 80)
+  const title = clean(formData.get('title'), 160)
+  const goalType = clean(formData.get('goal_type'), 40) || 'cash_flow'
+  const targetAmount = toPositiveAmount(formData.get('target_amount'))
+  const currentAmount = toPositiveAmount(formData.get('current_amount'))
+  const periodStart = clean(formData.get('period_start'), 40) || new Date().toISOString().slice(0, 10)
+  const periodEnd = clean(formData.get('period_end'), 40)
+  if (!workspaceId || !title || !financeGoalTypes.has(goalType) || targetAmount <= 0 || !periodEnd) throw new Error('Enter a goal name, target amount, and end date.')
+
+  const { error } = await supabase.from('finance_goals').insert({
+    workspace_id: workspaceId,
+    title,
+    goal_type: goalType,
+    target_amount: targetAmount,
+    current_amount: Math.max(currentAmount, 0),
+    period_start: periodStart,
+    period_end: periodEnd,
+    notes: clean(formData.get('notes')) || null,
+    created_by: user.id,
+  })
+  if (error) throw new Error(error.message)
+  revalidatePath('/finance')
+  revalidatePath('/dashboard')
+}
+
+export async function updateFinanceGoalProgress(formData) {
+  const { supabase } = await getUserClient()
+  const workspaceId = clean(formData.get('workspace_id'), 80)
+  const goalId = clean(formData.get('goal_id'), 80)
+  const currentAmount = toPositiveAmount(formData.get('current_amount'))
+  const status = clean(formData.get('status'), 40) || 'active'
+  if (!workspaceId || !goalId || !financeGoalStatuses.has(status)) throw new Error('Choose a valid goal and status.')
+
+  const { error } = await supabase
+    .from('finance_goals')
+    .update({ current_amount: Math.max(currentAmount, 0), status })
+    .eq('workspace_id', workspaceId)
+    .eq('id', goalId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/finance')
+  revalidatePath('/dashboard')
+}
+
+export async function addWorkspaceMember(formData) {
+  const { supabase, user } = await getUserClient()
+  const workspaceId = clean(formData.get('workspace_id'), 80)
+  const email = clean(formData.get('email'), 220).toLowerCase()
+  const role = clean(formData.get('role'), 40)
+  if (!workspaceId || !email || !assignableRoles.has(role)) throw new Error('Enter a teammate email and role.')
+  await assertWorkspaceOwner(supabase, user.id, workspaceId)
+
+  const admin = createAdminClient()
+  const targetUser = await findAuthUserByEmail(admin, email)
+  if (!targetUser) throw new Error('That user has not signed in yet. Ask them to log in once, then add them here.')
+  if (targetUser.id === user.id) throw new Error('The owner role is already assigned to your account.')
+
+  const { data: existingMember, error: existingError } = await admin
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', targetUser.id)
+    .maybeSingle()
+  if (existingError) throw new Error(existingError.message)
+  if (existingMember?.role === 'owner') throw new Error('The workspace owner role cannot be changed here.')
+
+  const displayName = targetUser.user_metadata?.full_name || targetUser.email?.split('@')[0] || 'Lofty member'
+  const { error: profileError } = await admin.from('profiles').upsert({ id: targetUser.id, display_name: displayName })
+  if (profileError) throw new Error(profileError.message)
+
+  const { error } = await admin
+    .from('workspace_members')
+    .upsert({ workspace_id: workspaceId, user_id: targetUser.id, role }, { onConflict: 'workspace_id,user_id' })
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings')
+}
+
+export async function updateWorkspaceMemberRole(formData) {
+  const { supabase, user } = await getUserClient()
+  const workspaceId = clean(formData.get('workspace_id'), 80)
+  const memberUserId = clean(formData.get('member_user_id'), 80)
+  const role = clean(formData.get('role'), 40)
+  if (!workspaceId || !memberUserId || !assignableRoles.has(role)) throw new Error('Choose a valid teammate and role.')
+  if (memberUserId === user.id) throw new Error('The owner role cannot be changed from this hub.')
+  await assertWorkspaceOwner(supabase, user.id, workspaceId)
+
+  const admin = createAdminClient()
+  const { data: existingMember, error: existingError } = await admin
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', memberUserId)
+    .maybeSingle()
+  if (existingError) throw new Error(existingError.message)
+  if (existingMember?.role === 'owner') throw new Error('The workspace owner role cannot be changed here.')
+
+  const { error } = await admin
+    .from('workspace_members')
+    .update({ role })
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', memberUserId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings')
+}
+
+export async function removeWorkspaceMember(formData) {
+  const { supabase, user } = await getUserClient()
+  const workspaceId = clean(formData.get('workspace_id'), 80)
+  const memberUserId = clean(formData.get('member_user_id'), 80)
+  if (!workspaceId || !memberUserId) throw new Error('Choose a teammate to remove.')
+  if (memberUserId === user.id) throw new Error('The workspace owner cannot remove their own access.')
+  await assertWorkspaceOwner(supabase, user.id, workspaceId)
+
+  const admin = createAdminClient()
+  const { data: existingMember, error: existingError } = await admin
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', memberUserId)
+    .maybeSingle()
+  if (existingError) throw new Error(existingError.message)
+  if (existingMember?.role === 'owner') throw new Error('The workspace owner cannot be removed here.')
+
+  const { error } = await admin
+    .from('workspace_members')
+    .delete()
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', memberUserId)
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings')
 }

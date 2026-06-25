@@ -17,5 +17,5 @@ export default async function LoginPage({ searchParams }) {
   const params = await searchParams
   const next = safeNext(params?.next)
   const error = typeof params?.error === 'string' ? params.error : ''
-  return <main className="auth-page"><section className="auth-card"><div className="brand"><span>LOFTY</span><small>STUDIOS</small></div><h1>Sign in to Lofty</h1><p>Enter your email and use the newest secure link. If your email shows a one-time code, you can enter it here too.</p><LoginForm next={next} initialMessage={loginCopy[error] || ''} initialTone={error ? 'error' : 'success'} /></section></main>
+  return <main className="auth-minimal-page"><section className="auth-minimal-shell" aria-labelledby="login-heading"><div className="auth-logo-lockup"><span className="auth-logo-mark" aria-hidden="true">L</span><h1 id="login-heading"><span>LOFTY</span><small>STUDIOS</small></h1></div><LoginForm next={next} initialMessage={loginCopy[error] || ''} initialTone={error ? 'error' : 'success'} /></section></main>
 }

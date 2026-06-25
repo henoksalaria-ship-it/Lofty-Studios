@@ -4,13 +4,16 @@ The production foundation for Lofty Studios’ operating system: pipeline, tasks
 
 ## What is built
 
-- Passwordless Supabase authentication, workspace onboarding, and protected app routes.
+- Passwordless Supabase authentication protected by a server-only master access password, workspace activation, and protected app routes.
 - Row-level access controls for owner, admin, sales, editor, finance, and viewer roles.
 - Live dashboard driven by deals, tasks, finance records, and calendar events.
 - Drag-and-drop pipeline stages that persist immediately.
 - Company/contact/deal creation with an automatic follow-up task.
-- Finance records with database-calculated remaining balance.
-- Content ideas that can be dragged into the next seven days to create calendar events.
+- Company directory with contacts, open deal counts, active stage, and open value.
+- Outreach logging for calls, emails, DMs, meetings, proposals, and automatic follow-up tasks.
+- Finance records with database-calculated remaining balance plus cash flow, collection, savings, revenue, and pipeline goals.
+- Calendar events linked to deals, event status updates, and content ideas that can be dragged into the next seven days to create calendar events.
+- Owner-controlled Settings role hub for admin, sales, editor, finance, and viewer access.
 - Performance data model and dashboard-ready analyzer screen.
 - A secure `POST /api/leads` endpoint for the main Lofty Studios website.
 
@@ -18,6 +21,7 @@ The production foundation for Lofty Studios’ operating system: pipeline, tasks
 
 1. Create a Supabase project.
 2. Copy `.env.example` to `.env.local` and fill in the project values. Never commit `.env.local`.
+   Set `LOFTY_MASTER_LOGIN_PASSWORD` to a long private password. It is checked on the server before sign-in links are sent and again when the first owner activates the workspace.
 3. Authenticate and link the CLI to that project:
 
    ```powershell
@@ -41,7 +45,7 @@ The production foundation for Lofty Studios’ operating system: pipeline, tasks
    npm run dev
    ```
 
-The first signed-in person creates the Lofty workspace and becomes its owner.
+The first signed-in person who also has the setup password activates the Lofty workspace and becomes its owner. After activation, workspace creation is closed and future users must be added through owner-controlled membership.
 
 ## Website lead intake
 
@@ -71,7 +75,8 @@ Optional fields include `email`, `phone`, `website`, `social_handle`, `industry`
 
 - Run `npx supabase db advisors` after linking the project and resolve all security findings.
 - Configure an email sender domain in Supabase Auth before inviting the team.
+- Enable Supabase Auth leaked password protection in the dashboard.
 - Set the production app URL and auth redirect URLs.
-- Deploy to Vercel (or another Node-compatible host) with the same environment variables.
+- Deploy to Vercel (or another Node-compatible host) with the same environment variables, including `SUPABASE_SERVICE_ROLE_KEY` and `LOFTY_MASTER_LOGIN_PASSWORD`.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. It is used exclusively by the website lead intake route.
 - Store files under `lofty-files/<workspace-id>/...`; the migration creates a private bucket with workspace-aware policies.
