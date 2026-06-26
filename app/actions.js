@@ -327,25 +327,52 @@ export async function addWorkspaceMember(formData) {
   const { supabase, user } = await getUserClient()
   const workspaceId = clean(formData.get('workspace_id'), 80)
   const email = clean(formData.get('email'), 220).toLowerCase()
+  const displayNameInput = clean(formData.get('display_name'), 120)
+  const initialPassword = String(formData.get('initial_password') || '')
   const role = clean(formData.get('role'), 40)
   if (!workspaceId || !email || !assignableRoles.has(role)) throw new Error('Enter a teammate email and role.')
   await assertWorkspaceOwner(supabase, user.id, workspaceId)
 
   const admin = createAdminClient()
-  const targetUser = await findAuthUserByEmail(admin, email)
-  if (!targetUser) throw new Error('That user has not signed in yet. Ask them to log in once, then add them here.')
-  if (targetUser.id === user.id) throw new Error('The owner role is already assigned to your account.')
+  let targetUser = await findAuthUserByEmail(admin, email)
+  if (targetUser?.id === user.id) throw new Error('The owner role is already assigned to your account.')
+  let existingMember = null
+  if (targetUser) {
+    const { data, error } = await admin
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', targetUser.id)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    existingMember = data
+    if (existingMember?.role === 'owner') throw new Error('The workspace owner role cannot be changed here.')
+  }
 
-  const { data: existingMember, error: existingError } = await admin
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', targetUser.id)
-    .maybeSingle()
-  if (existingError) throw new Error(existingError.message)
-  if (existingMember?.role === 'owner') throw new Error('The workspace owner role cannot be changed here.')
+  if (!targetUser && initialPassword.length < 8) throw new Error('Enter an initial password of at least 8 characters for new users.')
+  if (targetUser && initialPassword && initialPassword.length < 8) throw new Error('Use at least 8 characters when resetting a teammate password.')
 
-  const displayName = targetUser.user_metadata?.full_name || targetUser.email?.split('@')[0] || 'Lofty member'
+  const displayName = displayNameInput || targetUser?.user_metadata?.full_name || targetUser?.email?.split('@')[0] || email.split('@')[0] || 'Lofty member'
+
+  if (!targetUser) {
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: initialPassword,
+      email_confirm: true,
+      user_metadata: { full_name: displayName },
+    })
+    if (error) throw new Error(error.message)
+    targetUser = data.user
+  } else if (initialPassword) {
+    const { data, error } = await admin.auth.admin.updateUserById(targetUser.id, {
+      password: initialPassword,
+      email_confirm: true,
+      user_metadata: { full_name: displayName },
+    })
+    if (error) throw new Error(error.message)
+    targetUser = data.user
+  }
+
   const { error: profileError } = await admin.from('profiles').upsert({ id: targetUser.id, display_name: displayName })
   if (profileError) throw new Error(profileError.message)
 

@@ -13,7 +13,7 @@ The production foundation for Lofty Studios' operating system: pipeline, tasks, 
 - Outreach logging for calls, emails, DMs, meetings, proposals, and automatic follow-up tasks.
 - Finance records with database-calculated remaining balance plus cash flow, collection, savings, revenue, and pipeline goals.
 - Calendar events linked to deals, event status updates, and content ideas that can be dragged into the next seven days to create calendar events.
-- Owner-controlled Settings role hub for admin, sales, editor, finance, and viewer access.
+- Owner-controlled Settings role hub that creates teammate password access for admin, sales, editor, finance, and viewer roles.
 - Performance data model and dashboard-ready analyzer screen.
 - A secure `POST /api/leads` endpoint for the main Lofty Studios website.
 
@@ -37,7 +37,7 @@ The production foundation for Lofty Studios' operating system: pipeline, tasks, 
    npm run dev
    ```
 
-The first user opens the login page, chooses First setup, creates their password, and becomes the workspace owner. After activation, owner creation is closed and future users must be added through owner-controlled membership.
+The first user opens the login page, chooses First setup, creates their password, and becomes the workspace owner. After activation, owner creation is closed. Future users are created in Settings by the owner with an initial password and a role.
 
 ## Website lead intake
 
