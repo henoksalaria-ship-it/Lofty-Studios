@@ -26,9 +26,9 @@ const eventTypes = {
 export default async function CalendarPage() {
   const { supabase, workspace } = await requireAppContext()
   const [{ data: events = [] }, { data: ideas = [] }, { data: deals = [] }] = await Promise.all([
-    supabase.from('calendar_events').select('id,title,start_date,end_date,event_type,status,assigned_to,deals(deal_title,companies(company_name))').eq('workspace_id', workspace.id).order('start_date').limit(40),
+    supabase.from('calendar_events').select('id,title,start_date,end_date,event_type,status,assigned_to,deals(deal_title,companies!deals_company_id_fkey(company_name))').eq('workspace_id', workspace.id).order('start_date').limit(40),
     supabase.from('content_ideas').select('id,title,description,platform,content_type,status,created_at').eq('workspace_id', workspace.id).order('created_at', { ascending: false }).limit(60),
-    supabase.from('deals').select('id,deal_title,companies(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
+    supabase.from('deals').select('id,deal_title,companies!deals_company_id_fkey(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
   ])
   const defaultDate = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 

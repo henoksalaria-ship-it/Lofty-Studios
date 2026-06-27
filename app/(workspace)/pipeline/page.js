@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export default async function PipelinePage() {
   const { supabase, workspace } = await requireAppContext()
   const [{ data: deals = [] }, { data: outreachLogs = [] }, { data: financeRecords = [] }] = await Promise.all([
-    supabase.from('deals').select('id,deal_title,stage,value,probability,temperature,source,owner_id,duplicate_warning,companies(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
+    supabase.from('deals').select('id,deal_title,stage,value,probability,temperature,source,owner_id,duplicate_warning,companies!deals_company_id_fkey(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
     supabase.from('outreach_logs').select('deal_id,channel,outcome,message,created_at,next_follow_up_at').eq('workspace_id', workspace.id).order('created_at', { ascending: false }).limit(120),
     supabase.from('finance_records').select('deal_id,total_amount,paid_amount,remaining_amount,payment_status,due_date,invoice_number,created_at').eq('workspace_id', workspace.id),
   ])

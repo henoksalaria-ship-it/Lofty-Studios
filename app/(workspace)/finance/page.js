@@ -31,8 +31,8 @@ export default async function FinancePage() {
   const todayDate = new Date().toISOString().slice(0, 10)
   const defaultGoalEnd = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10)
   const [{ data: records = [] }, { data: deals = [] }, { data: goals = [], error: goalsError }] = await Promise.all([
-    supabase.from('finance_records').select('id,deal_id,total_amount,paid_amount,remaining_amount,expense_amount,payment_status,due_date,invoice_number,created_at,deals(id,deal_title,stage,value,companies(company_name))').eq('workspace_id', workspace.id).order('due_date'),
-    supabase.from('deals').select('id,deal_title,stage,value,companies(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
+    supabase.from('finance_records').select('id,deal_id,total_amount,paid_amount,remaining_amount,expense_amount,payment_status,due_date,invoice_number,created_at,deals(id,deal_title,stage,value,companies!deals_company_id_fkey(company_name))').eq('workspace_id', workspace.id).order('due_date'),
+    supabase.from('deals').select('id,deal_title,stage,value,companies!deals_company_id_fkey(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
     supabase.from('finance_goals').select('id,title,goal_type,target_amount,current_amount,period_start,period_end,status,notes').eq('workspace_id', workspace.id).order('period_end'),
   ])
 

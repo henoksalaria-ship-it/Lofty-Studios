@@ -10,9 +10,9 @@ export default async function DashboardPage() {
   const { supabase, workspace, user } = await requireAppContext()
   const today = new Date().toISOString()
   const [{ data: tasks = [] }, { data: deals = [] }, { data: finance = [] }, { data: events = [] }] = await Promise.all([
-    supabase.from('tasks').select('id,title,due_date,status,priority,deals(deal_title,companies(company_name))').eq('workspace_id', workspace.id).in('status', ['open', 'in_progress']).order('due_date').limit(6),
-    supabase.from('deals').select('id,deal_title,stage,value,probability,companies(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
-    supabase.from('finance_records').select('total_amount,paid_amount,remaining_amount,payment_status,due_date,deals(deal_title,companies(company_name))').eq('workspace_id', workspace.id).order('due_date').limit(5),
+    supabase.from('tasks').select('id,title,due_date,status,priority,deals(deal_title,companies!deals_company_id_fkey(company_name))').eq('workspace_id', workspace.id).in('status', ['open', 'in_progress']).order('due_date').limit(6),
+    supabase.from('deals').select('id,deal_title,stage,value,probability,companies!deals_company_id_fkey(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
+    supabase.from('finance_records').select('total_amount,paid_amount,remaining_amount,payment_status,due_date,deals(deal_title,companies!deals_company_id_fkey(company_name))').eq('workspace_id', workspace.id).order('due_date').limit(5),
     supabase.from('calendar_events').select('id,title,start_date,event_type,status').eq('workspace_id', workspace.id).gte('start_date', today).order('start_date').limit(6),
   ])
 

@@ -21,8 +21,8 @@ function defaultFollowUpDate() {
 export default async function OutreachPage() {
   const { supabase, workspace } = await requireAppContext()
   const [{ data: deals = [] }, { data: logs = [] }] = await Promise.all([
-    supabase.from('deals').select('id,deal_title,stage,companies(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
-    supabase.from('outreach_logs').select('id,channel,message,outcome,next_follow_up_at,created_at,deals(deal_title,stage,companies(company_name))').eq('workspace_id', workspace.id).order('created_at', { ascending: false }).limit(60),
+    supabase.from('deals').select('id,deal_title,stage,companies!deals_company_id_fkey(company_name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }),
+    supabase.from('outreach_logs').select('id,channel,message,outcome,next_follow_up_at,created_at,deals(deal_title,stage,companies!deals_company_id_fkey(company_name))').eq('workspace_id', workspace.id).order('created_at', { ascending: false }).limit(60),
   ])
 
   const weekAgo = Date.now() - 1000 * 60 * 60 * 24 * 7

@@ -8,7 +8,7 @@ export default async function CompaniesPage() {
   const { supabase, workspace } = await requireAppContext()
   const { data: companies = [] } = await supabase
     .from('companies')
-    .select('id,company_name,industry,source,created_at,deals(id,value,stage,deal_title),contacts(id,name,email,phone)')
+    .select('id,company_name,industry,source,created_at,deals!deals_company_id_fkey(id,value,stage,deal_title),contacts(id,name,email,phone)')
     .eq('workspace_id', workspace.id)
     .order('created_at', { ascending: false })
     .limit(80)

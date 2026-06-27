@@ -186,7 +186,7 @@ export async function createOutreachLog(formData) {
   if (nextFollowUpAt) {
     const { data: deal } = await supabase
       .from('deals')
-      .select('deal_title,companies(company_name)')
+      .select('deal_title,companies!deals_company_id_fkey(company_name)')
       .eq('workspace_id', workspaceId)
       .eq('id', dealId)
       .maybeSingle()
