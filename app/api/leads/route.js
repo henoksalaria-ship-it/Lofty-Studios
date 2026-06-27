@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildDuplicateWarnings } from '@/lib/reliability.mjs'
 
 export const runtime = 'nodejs'
 
@@ -33,22 +34,43 @@ export async function POST(request) {
   const { data: workspace, error: workspaceError } = await admin.from('workspaces').select('id,created_by').eq('slug', workspaceSlug).maybeSingle()
   if (workspaceError || !workspace) return NextResponse.json({ error: 'Workspace not found.' }, { status: 404 })
 
-  const companyKey = companyName.toLowerCase()
-  let { data: company } = await admin.from('companies').select('id').eq('workspace_id', workspace.id).eq('company_name_key', companyKey).maybeSingle()
+  const [{ data: companies = [] }, { data: contacts = [] }, { data: deals = [] }] = await Promise.all([
+    admin.from('companies').select('id,company_name,website,email,source,industry').eq('workspace_id', workspace.id).limit(500),
+    admin.from('contacts').select('id,company_id,name,email,phone').eq('workspace_id', workspace.id).limit(1000),
+    admin.from('deals').select('id,company_id,deal_title,stage').eq('workspace_id', workspace.id).limit(1000),
+  ])
+  const duplicateResult = buildDuplicateWarnings({
+    input: {
+      companyName,
+      dealTitle: clean(body.service_requested, 180) || `${companyName} inquiry`,
+      email: clean(body.email, 180),
+      phone: clean(body.phone, 60),
+      website: clean(body.website, 500),
+    },
+    companies,
+    contacts,
+    deals,
+  })
+
+  let company = duplicateResult.preferredCompanyId ? { id: duplicateResult.preferredCompanyId } : null
   if (!company) {
     const { data, error } = await admin.from('companies').insert({ workspace_id: workspace.id, company_name: companyName, industry: clean(body.industry, 120) || null, website: clean(body.website, 500) || null, instagram: clean(body.social_handle, 180) || null, phone: clean(body.phone, 60) || null, email: clean(body.email, 180) || null, source: clean(body.how_they_found_us, 60) || 'website' }).select('id').single()
     if (error) return NextResponse.json({ error: 'Could not create company.' }, { status: 500 })
     company = data
   }
 
-  const { data: contact, error: contactError } = await admin.from('contacts').insert({ workspace_id: workspace.id, company_id: company.id, name: contactName, email: clean(body.email, 180) || null, phone: clean(body.phone, 60) || null, instagram: clean(body.social_handle, 180) || null }).select('id').single()
-  if (contactError) return NextResponse.json({ error: 'Could not create contact.' }, { status: 500 })
+  let contact = duplicateResult.preferredContactId ? { id: duplicateResult.preferredContactId } : null
+  if (!contact) {
+    const { data, error } = await admin.from('contacts').insert({ workspace_id: workspace.id, company_id: company.id, name: contactName, email: clean(body.email, 180) || null, phone: clean(body.phone, 60) || null, instagram: clean(body.social_handle, 180) || null }).select('id').single()
+    if (error) return NextResponse.json({ error: 'Could not create contact.' }, { status: 500 })
+    contact = data
+  }
 
   const stage = validStages.has(body.initial_stage) ? body.initial_stage : 'cold_leads'
-  const { data: deal, error: dealError } = await admin.from('deals').insert({ workspace_id: workspace.id, company_id: company.id, primary_contact_id: contact.id, deal_title: clean(body.service_requested, 180) || `${companyName} inquiry`, stage, value: Math.max(0, Number(body.budget_amount || 0)), source: clean(body.how_they_found_us, 60) || 'website', owner_id: workspace.created_by, notes: clean(body.message) || null }).select('id').single()
+  const { data: deal, error: dealError } = await admin.from('deals').insert({ workspace_id: workspace.id, company_id: company.id, primary_contact_id: contact.id, deal_title: clean(body.service_requested, 180) || `${companyName} inquiry`, stage, value: Math.max(0, Number(body.budget_amount || 0)), source: clean(body.how_they_found_us, 60) || 'website', owner_id: workspace.created_by, notes: clean(body.message) || null, duplicate_warning: duplicateResult.warnings, reused_company_id: duplicateResult.preferredCompanyId || null, reused_contact_id: duplicateResult.preferredContactId || null }).select('id').single()
   if (dealError) return NextResponse.json({ error: 'Could not create deal.' }, { status: 500 })
 
   await admin.from('tasks').insert({ workspace_id: workspace.id, deal_id: deal.id, title: `Follow up with ${companyName}`, due_date: new Date().toISOString(), priority: 'high', assigned_to: workspace.created_by })
-  await admin.from('website_lead_submissions').insert({ workspace_id: workspace.id, deal_id: deal.id, source_payload: { company_name: companyName, contact_person: contactName, service_requested: clean(body.service_requested, 180), how_they_found_us: clean(body.how_they_found_us, 60), received_at: new Date().toISOString() } })
-  return NextResponse.json({ id: deal.id, stage, message: 'Lead created and follow-up task assigned.' }, { status: 201 })
+  await admin.from('website_lead_submissions').insert({ workspace_id: workspace.id, deal_id: deal.id, duplicate_warning: duplicateResult.warnings, source_payload: { company_name: companyName, contact_person: contactName, service_requested: clean(body.service_requested, 180), how_they_found_us: clean(body.how_they_found_us, 60), received_at: new Date().toISOString() } })
+  return NextResponse.json({ id: deal.id, stage, duplicate_warnings: duplicateResult.warnings, message: 'Lead created and follow-up task assigned.' }, { status: 201 })
 }

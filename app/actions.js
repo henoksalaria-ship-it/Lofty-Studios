@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildDuplicateWarnings } from '@/lib/reliability.mjs'
 
 const stages = new Set(['cold_leads', 'reached_out', 'open_deals', 'ongoing_deals', 'waiting_payment', 'closed_won', 'lost_not_now'])
 const financeGoalTypes = new Set(['cash_flow', 'revenue', 'collections', 'expense_control', 'savings', 'pipeline'])
@@ -72,28 +73,55 @@ export async function createLead(formData) {
   const dealTitle = clean(formData.get('deal_title'), 180) || `${companyName} campaign`
   const contactName = clean(formData.get('contact_name'), 160)
   const value = Number(formData.get('value') || 0)
+  const requestedCompanyId = clean(formData.get('company_id'), 80)
+  const requestedContactId = clean(formData.get('contact_id'), 80)
+  const duplicateOverride = clean(formData.get('duplicate_override'), 10) === 'true'
+  const followUpAt = clean(formData.get('next_follow_up_at'), 40)
+  const requestedStage = clean(formData.get('stage'), 40)
+  const stage = stages.has(requestedStage) ? requestedStage : 'cold_leads'
+  const requestedTemperature = clean(formData.get('temperature'), 40)
+  const temperature = ['hot', 'warm', 'cold'].includes(requestedTemperature) ? requestedTemperature : 'warm'
   if (!workspaceId || !companyName) throw new Error('Company name is required.')
 
-  const companyNameKey = companyName.toLowerCase()
-  let { data: company } = await supabase
-    .from('companies')
-    .select('id')
-    .eq('workspace_id', workspaceId)
-    .eq('company_name_key', companyNameKey)
-    .maybeSingle()
+  const [{ data: companies = [] }, { data: contacts = [] }, { data: deals = [] }] = await Promise.all([
+    supabase.from('companies').select('id,company_name,website,email,source,industry').eq('workspace_id', workspaceId).limit(500),
+    supabase.from('contacts').select('id,company_id,name,email,phone').eq('workspace_id', workspaceId).limit(1000),
+    supabase.from('deals').select('id,company_id,deal_title,stage').eq('workspace_id', workspaceId).limit(1000),
+  ])
+  const safeRequestedCompanyId = companies.some((companyItem) => companyItem.id === requestedCompanyId) ? requestedCompanyId : ''
+  const safeRequestedContact = contacts.find((contactItem) => contactItem.id === requestedContactId)
+  const safeRequestedContactId = safeRequestedContact ? requestedContactId : ''
+  const duplicateResult = buildDuplicateWarnings({
+    input: {
+      companyName,
+      dealTitle,
+      email: clean(formData.get('email'), 180),
+      phone: clean(formData.get('phone'), 60),
+      website: clean(formData.get('website'), 500),
+      company_id: safeRequestedCompanyId,
+      contact_id: safeRequestedContactId,
+    },
+    companies,
+    contacts,
+    deals,
+  })
+
+  const exactCompanyId = duplicateResult.companyMatches.find((companyMatch) => companyMatch.match_reason === 'exact company name')?.id || null
+  const reuseCompanyId = safeRequestedCompanyId || safeRequestedContact?.company_id || exactCompanyId || (!duplicateOverride ? duplicateResult.preferredCompanyId : null)
+  let company = reuseCompanyId ? { id: reuseCompanyId } : null
 
   if (!company) {
     const { data, error } = await supabase
       .from('companies')
-      .insert({ workspace_id: workspaceId, company_name: companyName, industry: clean(formData.get('industry'), 120) || null, source: clean(formData.get('source'), 60) || 'website' })
+      .insert({ workspace_id: workspaceId, company_name: companyName, industry: clean(formData.get('industry'), 120) || null, website: clean(formData.get('website'), 500) || null, source: clean(formData.get('source'), 60) || 'website' })
       .select('id')
       .single()
     if (error) throw new Error(error.message)
     company = data
   }
 
-  let contactId = null
-  if (contactName) {
+  let contactId = safeRequestedContactId || (!duplicateOverride ? duplicateResult.preferredContactId : null)
+  if (!contactId && contactName) {
     const { data: contact, error: contactError } = await supabase
       .from('contacts')
       .insert({ company_id: company.id, workspace_id: workspaceId, name: contactName, email: clean(formData.get('email'), 180) || null, phone: clean(formData.get('phone'), 60) || null })
@@ -105,7 +133,7 @@ export async function createLead(formData) {
 
   const { data: deal, error: dealError } = await supabase
     .from('deals')
-    .insert({ workspace_id: workspaceId, company_id: company.id, primary_contact_id: contactId, deal_title: dealTitle, stage: 'cold_leads', value: Number.isFinite(value) ? Math.max(value, 0) : 0, source: clean(formData.get('source'), 60) || 'website', owner_id: user.id, notes: clean(formData.get('notes')) || null })
+    .insert({ workspace_id: workspaceId, company_id: company.id, primary_contact_id: contactId, deal_title: dealTitle, stage, value: Number.isFinite(value) ? Math.max(value, 0) : 0, probability: Math.max(0, Math.min(100, Number(formData.get('probability') || 0))), temperature, source: clean(formData.get('source'), 60) || 'website', owner_id: user.id, notes: clean(formData.get('notes')) || null, duplicate_warning: duplicateResult.warnings, reused_company_id: reuseCompanyId || null, reused_contact_id: contactId || null })
     .select('id')
     .single()
   if (dealError) throw new Error(dealError.message)
@@ -114,9 +142,10 @@ export async function createLead(formData) {
     workspace_id: workspaceId,
     deal_id: deal.id,
     title: `Follow up with ${companyName}`,
-    due_date: new Date().toISOString(),
+    due_date: followUpAt ? new Date(followUpAt).toISOString() : new Date().toISOString(),
     priority: 'high',
     assigned_to: user.id,
+    created_by: user.id,
   })
   if (taskError) throw new Error(taskError.message)
   revalidatePath('/dashboard')
@@ -263,12 +292,14 @@ export async function createFinanceRecord(formData) {
   const dealId = clean(formData.get('deal_id'), 80)
   const totalAmount = Number(formData.get('total_amount') || 0)
   const paidAmount = Number(formData.get('paid_amount') || 0)
-  if (!workspaceId || !dealId || !Number.isFinite(totalAmount) || totalAmount < 0 || !Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > totalAmount) throw new Error('Enter valid payment amounts.')
+  const expenseAmount = Number(formData.get('expense_amount') || 0)
+  if (!workspaceId || !dealId || !Number.isFinite(totalAmount) || totalAmount < 0 || !Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > totalAmount || !Number.isFinite(expenseAmount) || expenseAmount < 0) throw new Error('Enter valid payment amounts.')
   const { error } = await supabase.from('finance_records').insert({
     workspace_id: workspaceId,
     deal_id: dealId,
     total_amount: totalAmount,
     paid_amount: paidAmount,
+    expense_amount: expenseAmount,
     payment_status: clean(formData.get('payment_status'), 30) || (paidAmount ? 'partial' : 'pending'),
     due_date: clean(formData.get('due_date'), 40) ? new Date(clean(formData.get('due_date'), 40)).toISOString() : null,
     invoice_number: clean(formData.get('invoice_number'), 120) || null,
@@ -284,7 +315,6 @@ export async function createFinanceGoal(formData) {
   const title = clean(formData.get('title'), 160)
   const goalType = clean(formData.get('goal_type'), 40) || 'cash_flow'
   const targetAmount = toPositiveAmount(formData.get('target_amount'))
-  const currentAmount = toPositiveAmount(formData.get('current_amount'))
   const periodStart = clean(formData.get('period_start'), 40) || new Date().toISOString().slice(0, 10)
   const periodEnd = clean(formData.get('period_end'), 40)
   if (!workspaceId || !title || !financeGoalTypes.has(goalType) || targetAmount <= 0 || !periodEnd) throw new Error('Enter a goal name, target amount, and end date.')
@@ -294,7 +324,7 @@ export async function createFinanceGoal(formData) {
     title,
     goal_type: goalType,
     target_amount: targetAmount,
-    current_amount: Math.max(currentAmount, 0),
+    current_amount: 0,
     period_start: periodStart,
     period_end: periodEnd,
     notes: clean(formData.get('notes')) || null,

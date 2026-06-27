@@ -8,10 +8,10 @@ The production foundation for Lofty Studios' operating system: pipeline, tasks, 
 - Row-level access controls for owner, admin, sales, editor, finance, and viewer roles.
 - Live dashboard driven by deals, tasks, finance records, and calendar events.
 - Drag-and-drop pipeline stages that persist immediately.
-- Company/contact/deal creation with an automatic follow-up task.
+- Guided company/contact/deal creation with duplicate warnings, default reuse, override support, and an automatic follow-up task.
 - Company directory with contacts, open deal counts, active stage, and open value.
 - Outreach logging for calls, emails, DMs, meetings, proposals, and automatic follow-up tasks.
-- Finance records with database-calculated remaining balance plus cash flow, collection, savings, revenue, and pipeline goals.
+- Finance records with database-calculated remaining balance, expense tracking, auto-calculated goals, and balance checks across deals, invoices, payments, and pipeline stages.
 - Calendar events linked to deals, event status updates, and content ideas that can be dragged into the next seven days to create calendar events.
 - Owner-controlled Settings role hub that creates teammate password access for admin, sales, editor, finance, and viewer roles.
 - Performance data model and dashboard-ready analyzer screen.
@@ -62,6 +62,20 @@ Required JSON fields:
 ```
 
 Optional fields include `email`, `phone`, `website`, `social_handle`, `industry`, `service_requested`, `budget_amount`, `message`, `how_they_found_us`, and `initial_stage` (`cold_leads` or `open_deals`). The endpoint deduplicates companies, creates the contact and deal, logs the website submission, and assigns a high-priority follow-up task.
+
+## Reliability checks
+
+Run syntax, build-safe logic tests, and duplicate/finance unit coverage:
+
+```powershell
+npm run check
+```
+
+Run read-only smoke tests against a deployed app:
+
+```powershell
+$env:SMOKE_BASE_URL="https://lofty-studios.vercel.app"; npm run test
+```
 
 ## Production release checklist
 

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check": "node --check lib/auth.js && node --check app/actions.js && node --check app/api/leads/route.js && node --check app/api/auth/activate-owner/route.js"
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check lib/auth.js && node --check lib/reliability.mjs && node --check app/actions.js && node --check app/api/leads/route.js && node --check app/api/auth/activate-owner/route.js && npm run test"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.0",
